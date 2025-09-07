@@ -1,4 +1,4 @@
-jhn_s3c [(γ)][5]
+jhn_s3c [(α)][5]
 ==========
 
 A partial S3 Erlang client lib
