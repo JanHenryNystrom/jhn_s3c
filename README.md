@@ -57,11 +57,7 @@ learning process and I have rather peculiar notions of code hygiene
 For a much nicer history, please [write good commit messages][4].
 I know I really should.
 
-  [1]: https://github.com/erlang/rebar3
-       "Rebar3 - A build tool for Erlang"
-  [2]: http://github.com/JanHenryNystrom/jhn_s3c/issues
-       "jhn_s3c issues"
-  [4]: http://github.com/erlang/otp/wiki/Writing-good-commit-messages
-       "Erlang/OTP commit messages"
-  [5]: http://en.wikipedia.org/wiki/Software_release_life_cycle
-       "Software release life cycle"
+  [1]: https://github.com/erlang/rebar3 "Rebar3 - A build tool for Erlang"
+  [2]: http://github.com/JanHenryNystrom/jhn_s3c/issues "jhn_s3c issues"
+  [4]: http://github.com/erlang/otp/wiki/Writing-good-commit-messages "Erlang/OTP commit messages"
+  [5]: http://en.wikipedia.org/wiki/Software_release_life_cycle "Software release life cycle"

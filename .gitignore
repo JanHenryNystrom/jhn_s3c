@@ -7,7 +7,4 @@ ebin
 rebar3
 rebar.lock
 .build
-doc/*.html
-doc/*.png
-doc/*.css
-doc/edoc-info
+doc
