@@ -1,0 +1,23 @@
+services:
+  s3:
+    image: minio/minio:latest
+    hostname: ${HOST_S3}
+    ports:
+      - ${PPORT_S3}:${PORT_S3}
+    env_file:
+      - .env
+    tty: true
+    environment:
+      MINIO_ROOT_USER: ${ACCOUNT_S3_USERNAME}
+      MINIO_ROOT_PASSWORD: ${ACCOUNT_S3_PASSWORD}
+      MINIO_DOMAIN: ${HOST_S3}
+    command: server /data
+    healthcheck:
+      test:
+        [ "CMD",
+          "curl",
+          "--silent",
+          "--fail",
+          "http://${HOST_S3}:9000/minio/health/live"
+        ]
+      start_period: 60s
