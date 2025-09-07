@@ -8,7 +8,7 @@ A partial S3 Erlang client lib
   * [Build](#build)
   * [Contribute](#contribute) - Read if you're planning to submit patches
 
-<a name='introduction'>
+<a name='introduction'/>
 
 Introduction
 ------------
@@ -16,16 +16,16 @@ Introduction
 A partial S3 Erlang client lib that only supports a few methods and
 AWS Signature Version 2. Will be expanded.
 
-<a name='behaviours'>
+<a name='behaviours'/>
 
-<a name='features'>
+<a name='features'/>
 
 Features/Modules
 --------
 
 TBD.
 
-<a name='build'>
+<a name='build'/>
 
 Build
 -----
@@ -43,7 +43,7 @@ To make sure jhn_s3c works on your platform, run the tests (reuquires docker):
 make ci
 ```
 
-<a name='contribute'>
+<a name='contribute'/>
 
 Contribute
 ----------
