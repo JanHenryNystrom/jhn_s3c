@@ -16,8 +16,6 @@ Introduction
 A partial S3 Erlang client lib that only supports a few methods and
 AWS Signature Version 2. Will be expanded.
 
-<a name='behaviours'/>
-
 <a name='features'/>
 
 Features/Modules
