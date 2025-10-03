@@ -203,7 +203,8 @@ do_exec(State, Max, Tries) ->
 state(Req) ->
     #req{method = M,
          bucket = B, key = K, sub = Sub, object = O, kvs = KVs} = Req,
-    #config{protocol = Proto, host = Host, port = Port,
+    #config{request_type = ReqType,
+            protocol = Proto, host = Host, port = Port,
             hackney_opts = Opts, max_tries = Max,
             access_key_id = Id, access_key = SecretKey} = jhn_s3c_app:config(),
     URL = <<Proto/binary, "://", Host/binary, ":", Port/binary>>,
@@ -226,16 +227,22 @@ state(Req) ->
                    ~"" -> Headers;
                    _ -> [{~"Content-MD5", MD5} | Headers]
                end,
-    Headers2 = case B of
-                   ~"" -> [{~"Host", Host} | Headers1];
+    Headers2 = case {ReqType, B} of
+                   {path, _} -> [{~"Host", Host} | Headers1];
+                   {_, ~""} -> [{~"Host", Host} | Headers1];
                    _ -> [{~"Host", <<B/binary, ".", Host/binary>>} | Headers1]
                end,
     KVs1 = case Sub of
                ~"" -> KVs;
                _ -> Sub
            end,
+    URI = case {ReqType, B} of
+              {virtual_host, _} -> hackney_url:make_url(URL, [K], KVs1);
+              {path, ~""} -> hackney_url:make_url(URL, [K], KVs1);
+              {path, _} -> hackney_url:make_url(URL, [B, K], KVs1)
+          end,
     State = #state{method = M,
-                   uri = hackney_url:make_url(URL, [K], KVs1),
+                   uri = URI,
                    headers = Headers2,
                    object = O,
                    hackney_opts = Opts},

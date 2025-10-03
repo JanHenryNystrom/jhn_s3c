@@ -15,7 +15,8 @@
 %% limitations under the License.
 %%==============================================================================
 
--record(config, {protocol      :: binary(),
+-record(config, {request_type  :: virtual_host | path,
+                 protocol      :: binary(),
                  host          :: binary(),
                  port          :: binary(),
                  access_key_id :: binary(),
