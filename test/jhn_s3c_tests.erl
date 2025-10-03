@@ -54,6 +54,24 @@ object_test_() ->
           {"Delete", ?_test(delete(object))}
          ]}}.
 
+bucket_path_test_() ->
+    {inorder,
+        {setup, setup(bucket_path), teardown(bucket),
+         [{"Create", ?_test(create(bucket))},
+          {"List", ?_test(list(buckets))},
+          {"Delete", ?_test(delete(bucket))}
+         ]}}.
+
+object_path_test_() ->
+    {inorder,
+        {setup, setup(object_path), teardown(object),
+         [{"Create", ?_test(create(object))},
+          {"Read", ?_test(read(object))},
+          {"Update", ?_test(update(object))},
+          {"List", ?_test(list(objects))},
+          {"Delete", ?_test(delete(object))}
+         ]}}.
+
 %%------------------------------------------------------------------------------
 %% Setup
 %%------------------------------------------------------------------------------
@@ -67,6 +85,23 @@ setup(bucket) ->
 setup(object) ->
     logger:remove_handler(default),
     fun() ->
+            {ok, Started} = application:ensure_all_started(jhn_s3c),
+            ok = jhn_s3c:create_bucket(?BUCKET),
+            Started
+    end;
+setup(bucket_path) ->
+    logger:remove_handler(default),
+    fun() ->
+            application:load(jhn_s3c),
+            application:set_env(jhn_s3c, request_type, path),
+            {ok, Started} = application:ensure_all_started(jhn_s3c),
+            Started
+    end;
+setup(object_path) ->
+    logger:remove_handler(default),
+    fun() ->
+            application:load(jhn_s3c),
+            application:set_env(jhn_s3c, request_type, path),
             {ok, Started} = application:ensure_all_started(jhn_s3c),
             ok = jhn_s3c:create_bucket(?BUCKET),
             Started

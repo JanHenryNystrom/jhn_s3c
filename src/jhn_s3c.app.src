@@ -33,6 +33,7 @@
          {protocol, http},
          {host, "localhost"},
          {port, 80},
+         {request_type, virtual_host},
          %% Hackney
          {hackney_pool, jhn_s3c},
          {hackney_opts, []},
@@ -40,8 +41,7 @@
          {max_tries, 3},
          %% S3
          {access_key_id, undefined},
-         {access_key, undefined},
-         {url, undefined}
+         {access_key, undefined}
         ]},
   %% HEX configs
   {licenses, ["Apache-2.0"]},
