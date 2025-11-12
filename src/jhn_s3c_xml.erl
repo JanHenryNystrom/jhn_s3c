@@ -143,7 +143,7 @@ decode(Binary) ->
 %%   
 %% @end
 %%--------------------------------------------------------------------
--spec select(_, #xml{}) -> [binary()] | {error, _}.
+-spec select(_, #xml{}) -> binary() | [binary()] | {error, _}.
 %%--------------------------------------------------------------------
 select(Selection, XML) ->
     try do_select(Selection, XML)
@@ -425,6 +425,3 @@ do_select([H | T], #xml{children = Children}) ->
         false -> [];
         XML = #xml{} -> do_select(T, XML)
     end.
-
-
-
