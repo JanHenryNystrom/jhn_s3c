@@ -29,8 +29,9 @@
 -export([%% Bucket
          create_bucket/1, list_buckets/0, delete_bucket/1,
          %% Object
+         count_objects/1, count_objects/2,
          put_object/3,
-         list_objects/1,
+         list_objects/1, list_objects/2,
          get_object/2, head_object/2,
          delete_object/2, delete_objects/2]).
 
@@ -47,7 +48,9 @@
 -type key()          :: binary().
 -type sub_resource() :: binary().
 -type value()        :: iodata().
+-type opts()         :: [opt()].
 
+-type opt()           :: {max_keys, integer()} | {token, binary()}.
 -type hackney_error() :: _.
 -type http_error()    :: {status(), headers(), body()}.
 -type exception()     :: {class(), reason(),  [tuple()]}.
@@ -64,7 +67,7 @@
 -define(SUCCESS(Status), Status >= 200, Status =< 299).
 
 %% Records
--record(req, {method         :: method(),
+-record(req, {method  = get  :: method(),
               bucket  = ~""  :: bucket(),
               key     = ~""  :: key(),
               sub     = ~""  :: sub_resource(),
@@ -95,10 +98,9 @@ create_bucket(Bucket) ->
 -spec list_buckets() -> [bucket()] | error().
 %%--------------------------------------------------------------------
 list_buckets() ->
-    case exec(#req{method = get}) of
+    case exec(#req{}) of
         {ok, _, Body} ->
-            jhn_s3c_xml:select([~"Buckets", [~"Bucket"], ~"Name", child],
-                               jhn_s3c_xml:decode(Body));
+            select([~"Buckets", [~"Bucket"], ~"Name", child], Body);
         Error -> Error
     end.
 
@@ -112,32 +114,54 @@ delete_bucket(Bucket) ->
     end.
 
 %%--------------------------------------------------------------------
+-spec count_objects(bucket()) -> non_neg_integer() | error().
+%%--------------------------------------------------------------------
+count_objects(Bucket) -> count_objects(Bucket, 1000).
+
+%%--------------------------------------------------------------------
+-spec count_objects(bucket(), pos_integer()) -> non_neg_integer() | error().
+%%--------------------------------------------------------------------
+count_objects(Bucket, NoOfKeysAtTheTime) ->
+    count_objects(list_objects(Bucket), Bucket, NoOfKeysAtTheTime, 0).
+
+%%--------------------------------------------------------------------
 -spec put_object(bucket(), key(), value()) -> ok | error().
 %%--------------------------------------------------------------------
 put_object(Bucket, Key, Value) ->
-    Req = #req{method = put, bucket = Bucket, key = Key, object = Value},
-    case exec(Req) of
+    case exec(#req{method = put, bucket = Bucket, key = Key, object = Value}) of
         {ok, _, _} -> ok;
         Error -> Error
     end.
 
 %%--------------------------------------------------------------------
--spec list_objects(bucket()) -> [key()] | error().
+-spec list_objects(bucket()) ->
+          [key()] | #{token := _, keys := [key()]} | error().
 %%--------------------------------------------------------------------
-list_objects(Bucket) ->
-    Req = #req{method = get, bucket = Bucket, kvs = [{~"list-type", ~"2"}]},
-    case exec(Req) of
+list_objects(Bucket) -> list_objects(Bucket, []).
+
+%%--------------------------------------------------------------------
+-spec list_objects(bucket(), opts()) ->
+          [key()] | #{token := _, keys := [key()]} | error().
+%%--------------------------------------------------------------------
+list_objects(Bucket, Opts) ->
+    KVs = parse_opts(Opts),
+    case exec(#req{bucket = Bucket, kvs = [{~"list-type", ~"2"} | KVs]}) of
         {ok, _, Body} ->
-            jhn_s3c_xml:select([[~"Contents"], ~"Key", child],
-                               jhn_s3c_xml:decode(Body));
-        Error -> Error
+            case select([~"IsTruncated", child], Body) of
+                ~"false" -> select([[~"Contents"], ~"Key", child], Body);
+                ~"true" ->
+                    #{token => select([~"NextContinuationToken", child], Body),
+                      keys => select([[~"Contents"], ~"Key", child], Body)}
+            end;
+        Error ->
+            Error
     end.
 
 %%--------------------------------------------------------------------
 -spec get_object(bucket(), key()) -> value() | error().
 %%--------------------------------------------------------------------
 get_object(Bucket, Key) ->
-    case exec(#req{method = get, bucket = Bucket, key = Key}) of
+    case exec(#req{bucket = Bucket, key = Key}) of
         {ok, _, Body} -> Body;
         Error -> Error
     end.
@@ -165,6 +189,7 @@ delete_object(Bucket, Key) ->
 %%--------------------------------------------------------------------
 -spec delete_objects(bucket(), [key()]) -> ok | error().
 %%--------------------------------------------------------------------
+delete_objects(_, []) -> ok;
 delete_objects(Bucket, Keys) ->
     XML = #xml{tag = ~"Delete",
                attrs = [{xmlns, ~"http://s3.amazonaws.com/doc/2006-03-01/"}],
@@ -182,6 +207,22 @@ delete_objects(Bucket, Keys) ->
 %% ===================================================================
 %% Inernal functions.
 %% ===================================================================
+
+count_objects(#{token := T}, Bucket, Step, Acc) ->
+    Opts = [{token, T}, {max_keys, Step}],
+    count_objects(list_objects(Bucket, Opts), Bucket, Step, Acc + Step);
+count_objects([], _, Acc, _) -> Acc;
+count_objects(List = [_|_], _, _, Acc) ->
+    Acc + length(List);
+count_objects(Error, _, _, _) ->
+    Error.
+
+parse_opts(Opts) -> [parse_opt(Opt) || Opt <- Opts].
+
+parse_opt({max_keys, N}) when is_integer(N) ->
+    {~"max-keys", integer_to_binary(N)};
+parse_opt({token, Token}) ->
+    {~"continuation-token", Token}.
 
 exec(Req) ->
     {State, Max} = state(Req),
@@ -277,3 +318,5 @@ result({ok, Status, Headers, Body}, _, _) -> {error, {Status, Headers, Body}};
 result({error, closed}, Max, Try) when Try < Max -> retry;
 result({error, timeout}, Max, Try) when Try < Max -> retry;
 result(Error = {error, _}, _, _) -> Error.
+
+select(Pick, XML) -> jhn_s3c_xml:select(Pick, jhn_s3c_xml:decode(XML)).

@@ -21,7 +21,7 @@
 %%% @end
 %%%
 %% @author Jan Henry Nystrom <JanHenryNystrom@gmail.com>
-%% @copyright (C) 2024, Jan Henry Nystrom <JanHenryNystrom@gmail.com>
+%% @copyright (C) 2025, Jan Henry Nystrom <JanHenryNystrom@gmail.com>
 %%%-------------------------------------------------------------------
 {application, jhn_s3c,
  [{description, "An S3 client lib"},

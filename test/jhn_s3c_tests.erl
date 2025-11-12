@@ -54,6 +54,14 @@ object_test_() ->
           {"Delete", ?_test(delete(object))}
          ]}}.
 
+object_listing_test_() ->
+    {inorder,
+        {setup, setup(object), teardown(object),
+         [{"List max_keys", ?_test(list(max_keys))},
+          {"List token", ?_test(list(continuation_token))},
+          {"count objects", ?_test(list(count))}
+         ]}}.
+
 bucket_path_test_() ->
     {inorder,
         {setup, setup(bucket_path), teardown(bucket),
@@ -120,17 +128,34 @@ teardown(object) ->
 %% Tests
 %%------------------------------------------------------------------------------
 
-create(bucket) ->
-    ?assertMatch(ok, jhn_s3c:create_bucket(?BUCKET));
+create(bucket) -> ?assertMatch(ok, jhn_s3c:create_bucket(?BUCKET));
 create(object) ->
     Key = jhn_uuid:gen(v7, [binary]),
     Object = jhn_json:encode(#{hallo => goodbye}, [binary]),
     ?assertMatch(ok, jhn_s3c:put_object(?BUCKET, Key, Object)).
 
-list(buckets) ->
-    ?assertMatch([?BUCKET], jhn_s3c:list_buckets());
-list(objects) ->
-    ?assertMatch([_, _, _], jhn_s3c:list_objects(?BUCKET)).
+list(buckets) -> ?assertMatch([?BUCKET], jhn_s3c:list_buckets());
+list(objects) -> ?assertMatch([_, _, _], jhn_s3c:list_objects(?BUCKET));
+list(max_keys) ->
+    put_n(10),
+    ?assertMatch(#{token := _, keys := [_, _, _, _, _]},
+                 jhn_s3c:list_objects(?BUCKET, [{max_keys, 5}])),
+    ?assertMatch(10, length(jhn_s3c:list_objects(?BUCKET, []))),
+    ok = jhn_s3c:delete_objects(?BUCKET, jhn_s3c:list_objects(?BUCKET));
+list(continuation_token) ->
+    put_n(10),
+    #{token := T, keys := Ks} = jhn_s3c:list_objects(?BUCKET, [{max_keys, 5}]),
+    ok = jhn_s3c:delete_objects(?BUCKET, Ks),
+    ?assertMatch([_, _, _, _, _],
+                 jhn_s3c:list_objects(?BUCKET, [{max_keys, 5}, {token, T}])),
+    ok = jhn_s3c:delete_objects(?BUCKET, jhn_s3c:list_objects(?BUCKET));
+list(count) ->
+    put_n(213),
+    ?assertMatch(213, jhn_s3c:count_objects(?BUCKET, 3)),
+    #{keys := Keys} = jhn_s3c:list_objects(?BUCKET, [{max_keys, 14}]),
+    ok = jhn_s3c:delete_objects(?BUCKET, Keys),
+    ?assertMatch(199, jhn_s3c:count_objects(?BUCKET)),
+    ok = jhn_s3c:delete_objects(?BUCKET, jhn_s3c:list_objects(?BUCKET)).
 
 read(object) ->
     Key = jhn_uuid:gen(v7, [binary]),
@@ -161,3 +186,9 @@ delete(object) ->
 %%------------------------------------------------------------------------------
 %% Internal functions
 %%------------------------------------------------------------------------------
+
+put_n(N) ->
+    [jhn_s3c:put_object(?BUCKET, key(I), object(I)) || I <- lists:seq(1, N)].
+
+key(N) -> <<"Key_", (integer_to_binary(N))/binary>>.
+object(N) -> <<"Object_", (integer_to_binary(N))/binary>>.
