@@ -28,12 +28,14 @@
 %% API functions
 -export([%% Bucket
          create_bucket/1, list_buckets/0, delete_bucket/1,
+         get_bucket_versioning/1, put_bucket_versioning/2,
          %% Object
          count_objects/1, count_objects/2,
          put_object/3,
          list_objects/1, list_objects/2,
+         list_object_versions/1, list_object_versions/2,
          get_object/2, head_object/2,
-         delete_object/2, delete_objects/2]).
+         delete_object/2,  delete_object/3, delete_objects/2]).
 
 %% Includes
 -include_lib("jhn_s3c/src/jhn_s3c.hrl").
@@ -46,18 +48,28 @@
 %% Types
 -type bucket()       :: binary().
 -type key()          :: binary().
+-type version_key()  :: #{key := key(),
+                          is_latest := boolean(),
+                          version_id := binary()}.
 -type sub_resource() :: binary().
 -type value()        :: iodata().
 -type opts()         :: [opt()].
 
--type opt()           :: {max_keys, integer()} | {token, binary()}.
+-type versioning() :: #{status := status(), mfa_delete => mfa_delete()}.
+-type status()     :: enabled | suspended.
+-type mfa_delete() :: enabled | disabled.
+
+-type opt()           :: {max_keys, integer()} | {token, binary()} |
+                         {key_marker, binary()} |
+                         {version_id_marker, binary()} |
+                         {version_id, binary()}.
 -type hackney_error() :: _.
--type http_error()    :: {status(), headers(), body()}.
+-type http_error()    :: {http_status(), headers(), body()}.
 -type exception()     :: {class(), reason(),  [tuple()]}.
 -type class()         :: exit | error | throw.
 -type reason()        :: atom() | {atom(), _}.
 -type error()         :: {error, http_error() | exception() | hackney_error()}.
--type status()        :: integer().
+-type http_status()   :: integer().
 -type headers()       :: [{binary(), binary()}].
 -type body()          :: binary().
 
@@ -79,7 +91,8 @@
                 uri          :: binary(),
                 headers      :: [{_, _}],
                 object       :: value(),
-                hackney_opts :: [{_, _}]}).
+                hackney_opts :: [{_, _}]
+               }).
 
 %% ===================================================================
 %% API functions.
@@ -100,7 +113,7 @@ create_bucket(Bucket) ->
 list_buckets() ->
     case exec(#req{}) of
         {ok, _, Body} ->
-            select([~"Buckets", [~"Bucket"], ~"Name", child], Body);
+            select([~"Buckets", {~"Bucket"}, ~"Name", child], Body);
         Error -> Error
     end.
 
@@ -109,6 +122,42 @@ list_buckets() ->
 %%--------------------------------------------------------------------
 delete_bucket(Bucket) ->
     case exec(#req{method = delete, bucket = Bucket}) of
+        {ok, _, _} -> ok;
+        Error -> Error
+    end.
+
+%%--------------------------------------------------------------------
+-spec get_bucket_versioning(bucket()) -> versioning() | error().
+%%--------------------------------------------------------------------
+get_bucket_versioning(Bucket) ->
+    case exec(#req{bucket = Bucket, sub = ~"versioning"}) of
+        {ok, _, Body} ->
+            XML = <<"<?xml version=\"1.0\"?>", Body/binary>>,
+            case select([[~"Status", ~"MfaDelete"]], XML) of
+                [] -> #{status => suspended};
+                Children ->
+                    #{low_atom(Tag) => low_atom(Val) ||
+                        #xml{tag = Tag, children = [Val]} <- Children}
+            end;
+        Error -> Error
+    end.
+
+%%--------------------------------------------------------------------
+-spec put_bucket_versioning(bucket(), status()) -> versioning() | error().
+%%--------------------------------------------------------------------
+put_bucket_versioning(Bucket, Status) ->
+    Status1 = case Status of
+                  enabled -> ~"Enabled";
+                  suspended -> ~"Suspended"
+              end,
+    XML = #xml{tag = ~"VersioningConfiguration",
+               attrs = [{xmlns, ~"http://s3.amazonaws.com/doc/2006-03-01/"}],
+               children = [#xml{tag = ~"Status", children = [Status1]}]},
+    Req = #req{method = put,
+               bucket = Bucket,
+               sub = ~"versioning",
+               object = jhn_s3c_xml:encode(XML, binary)},
+    case exec(Req) of
         {ok, _, _} -> ok;
         Error -> Error
     end.
@@ -144,14 +193,56 @@ list_objects(Bucket) -> list_objects(Bucket, []).
           [key()] | #{token := _, keys := [key()]} | error().
 %%--------------------------------------------------------------------
 list_objects(Bucket, Opts) ->
-    KVs = parse_opts(Opts),
+    KVs = parse_opts(?FUNCTION_NAME, Opts),
     case exec(#req{bucket = Bucket, kvs = [{~"list-type", ~"2"} | KVs]}) of
         {ok, _, Body} ->
+            Keys = select([{~"Contents"}, ~"Key", child], Body),
             case select([~"IsTruncated", child], Body) of
-                ~"false" -> select([[~"Contents"], ~"Key", child], Body);
+                ~"false" -> Keys;
                 ~"true" ->
                     #{token => select([~"NextContinuationToken", child], Body),
-                      keys => select([[~"Contents"], ~"Key", child], Body)}
+                      keys => Keys}
+            end;
+        Error ->
+            Error
+    end.
+
+%%--------------------------------------------------------------------
+-spec list_object_versions(bucket()) ->
+          [version_key()] |
+          #{key_marker := _,
+            version_id_marker := _,
+            keys := [version_key()]} | error().
+%%--------------------------------------------------------------------
+list_object_versions(Bucket) -> list_object_versions(Bucket, []).
+
+%%--------------------------------------------------------------------
+-spec list_object_versions(bucket(), opts()) ->
+          [version_key()] |
+          #{key_marker := _,
+            version_id_marker := _,
+            keys := [version_key()]} | error().
+%%--------------------------------------------------------------------
+list_object_versions(Bucket, Opts) ->
+    KVs = parse_opts(?FUNCTION_NAME, Opts),
+    case exec(#req{bucket = Bucket, sub = ~"versions", kvs = KVs}) of
+        {ok, _, Body} ->
+            VersionKeys =
+                [#{key => Key,
+                   is_latest => binary_to_existing_atom(IsLatest),
+                   version_id => VersionId} ||
+                    [Key, IsLatest, VersionId] <-
+                        select([{~"Version"},
+                                [~"Key", ~"IsLatest", ~"VersionId"],
+                                child],
+                               Body)],
+            case select([~"IsTruncated", child], Body) of
+                ~"false" -> VersionKeys;
+                ~"true" ->
+                    #{key_marker => select([~"NextKeyMarker", child], Body),
+                      version_id_marker =>
+                          select([~"NextVersionIdMarker", child], Body),
+                      keys => VersionKeys}
             end;
         Error ->
             Error
@@ -180,23 +271,38 @@ head_object(Bucket, Key) ->
 %%--------------------------------------------------------------------
 -spec delete_object(bucket(), key()) -> ok | error().
 %%--------------------------------------------------------------------
-delete_object(Bucket, Key) ->
-    case exec(#req{method = delete, bucket = Bucket, key = Key}) of
+delete_object(Bucket, Key) -> delete_object(Bucket, Key, []).
+
+%%--------------------------------------------------------------------
+-spec delete_object(bucket(), key(), opts()) -> ok | error().
+%%--------------------------------------------------------------------
+delete_object(Bucket, Key, Opts) ->
+    Sub = case parse_opts(?FUNCTION_NAME, Opts) of
+              [] -> ~"";
+              [{<<"versionId">>, Id}] -> <<"VersionId=", Id/binary>>
+          end,
+    case exec(#req{method = delete, bucket = Bucket, key = Key, sub = Sub}) of
         {ok, _, _} -> ok;
         Error -> Error
     end.
 
 %%--------------------------------------------------------------------
--spec delete_objects(bucket(), [key()]) -> ok | error().
+-spec delete_objects(bucket(), [key() | version_key()]) -> ok | error().
 %%--------------------------------------------------------------------
 delete_objects(_, []) -> ok;
 delete_objects(Bucket, Keys) ->
+    RegularKeys =
+        [#xml{tag = ~"Object",
+              children = [#xml{tag = ~"Key", children = [Key]}]} ||
+            Key <- Keys, is_binary(Key)],
+    VersionKeys =
+        [#xml{tag = ~"Object",
+              children = [#xml{tag = ~"Key", children = [Key]},
+                          #xml{tag = ~"VersionId", children = [VersionId]}]} ||
+            #{key := Key, version_id := VersionId} <- Keys],
     XML = #xml{tag = ~"Delete",
                attrs = [{xmlns, ~"http://s3.amazonaws.com/doc/2006-03-01/"}],
-               children =
-                   [#xml{tag = ~"Object",
-                         children = [#xml{tag = ~"Key",
-                                          children = [Key]}]} || Key <- Keys]},
+               children = RegularKeys ++ VersionKeys},
     Body = jhn_s3c_xml:encode(XML, binary),
     Req = #req{method = post, bucket = Bucket, sub = ~"delete", object = Body},
     case exec(Req) of
@@ -205,7 +311,7 @@ delete_objects(Bucket, Keys) ->
     end.
 
 %% ===================================================================
-%% Inernal functions.
+%% Internal functions.
 %% ===================================================================
 
 count_objects(#{token := T}, Bucket, Step, Acc) ->
@@ -217,26 +323,36 @@ count_objects(List = [_|_], _, _, Acc) ->
 count_objects(Error, _, _, _) ->
     Error.
 
-parse_opts(Opts) -> [parse_opt(Opt) || Opt <- Opts].
+parse_opts(Function, Opts) -> [parse_opt(Function, Opt) || Opt <- Opts].
 
-parse_opt({max_keys, N}) when is_integer(N) ->
+parse_opt(_, {max_keys, N}) when is_integer(N) ->
     {~"max-keys", integer_to_binary(N)};
-parse_opt({token, Token}) ->
-    {~"continuation-token", Token}.
+parse_opt(list_objects, {token, Token}) ->
+    {~"continuation-token", Token};
+parse_opt(list_object_versions, {key_marker, KeyMarker}) ->
+    {~"key-marker", KeyMarker};
+parse_opt(list_object_versions, {version_id, VersionIdMarker}) ->
+    {~"version-id-marker", VersionIdMarker};
+parse_opt(delete_object, {version_id, VersionsId}) ->
+    {~"versionId", VersionsId}.
 
 exec(Req) ->
-    {State, Max} = state(Req),
-    try do_exec(State, Max, 0)
+    {State, Max, Count} = state(Req),
+    try do_exec(State, Max, 0, Count + 1, 0)
     catch C:R:BT -> {error, {C, R, BT}}
     end.
 
-do_exec(State, Max, Tries) ->
+do_exec(State, Max, Tries, Count, Closed) ->
     #state{method = M, uri = URI, headers = Headers, object = Object,
            hackney_opts = Opts} = State,
     case result(hackney:request(M, URI, Headers, Object, Opts), Max, Tries) of
         retry ->
-            timer:sleep((49 + rand:uniform(51)) * Tries),
-            do_exec(State, Max, Tries + 1);
+            timer:sleep((49 + rand:uniform(51)) * Tries, Count, Closed),
+            do_exec(State, Max, Tries + 1, Count, Closed);
+        closed when Closed > Count ->
+            {error, closed};
+        closed ->
+            do_exec(State, Max, Tries, Count, Closed + 1);
         Result ->
             Result
     end.
@@ -247,7 +363,9 @@ state(Req) ->
     #config{request_type = ReqType,
             protocol = Proto, host = Host, port = Port,
             hackney_opts = Opts, max_tries = Max,
-            access_key_id = Id, access_key = SecretKey} = jhn_s3c_app:config(),
+            access_key_id = Id, access_key = SecretKey} = jhn_s3c_config:get(),
+    {_, Pool} = proplists:lookup(pool, Opts),
+    Count = hackney_pool:count(Pool),
     URL = <<Proto/binary, "://", Host/binary, ":", Port/binary>>,
     Method = normalize(M),
     {ContentType, MD5} =
@@ -287,7 +405,7 @@ state(Req) ->
                    headers = Headers2,
                    object = O,
                    hackney_opts = Opts},
-    {State, Max}.
+    {State, Max, Count}.
 
 normalize(get) -> ~"GET";
 normalize(head) -> ~"HEAD";
@@ -315,8 +433,10 @@ result({ok, 500, Headers, Body}, Max, Try) when Try < Max ->
     end;
 result({ok, Status, Headers}, _, _) -> {error, {Status, Headers, ~""}};
 result({ok, Status, Headers, Body}, _, _) -> {error, {Status, Headers, Body}};
-result({error, closed}, Max, Try) when Try < Max -> retry;
+result({error, closed}, _, _) -> closed;
 result({error, timeout}, Max, Try) when Try < Max -> retry;
 result(Error = {error, _}, _, _) -> Error.
 
 select(Pick, XML) -> jhn_s3c_xml:select(Pick, jhn_s3c_xml:decode(XML)).
+
+low_atom(S) -> binary_to_existing_atom(jhn_bstring:to_lower(S)).

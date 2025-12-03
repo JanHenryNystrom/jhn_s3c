@@ -418,8 +418,10 @@ unescape(<<"#", T/binary>>) -> binary_to_integer(T).
 do_select([], XML) -> XML;
 do_select([child | T], #xml{children = [Child]}) ->
     do_select(T, Child);
-do_select([[H] | T], #xml{children = Children}) ->
+do_select([{H} | T], #xml{children = Children}) ->
     [do_select(T, Child) || Child <- Children, Child#xml.tag == H];
+do_select([H = [_ | _] | T], #xml{children = Children}) ->
+    [do_select(T, Child) || Child <- Children, lists:member(Child#xml.tag, H)];
 do_select([H | T], #xml{children = Children}) ->
     case lists:keyfind(H, #xml.tag, Children) of
         false -> [];
