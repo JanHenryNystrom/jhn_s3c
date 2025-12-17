@@ -197,20 +197,10 @@ versioning(list) ->
     ?assertMatch([#{key := Key, is_latest := true, version_id := _},
                   #{key := Key, is_latest := false, version_id := _}],
                  jhn_s3c:list_object_versions(?BUCKET)),
-    VKs = [#{key := Key, version_id := V1}, #{version_id := V2}] =
+    VKs = [#{version_id := V1}, #{version_id := V2}] =
         jhn_s3c:list_object_versions(?BUCKET),
     ?assertMatch(true, V1 /= V2),
-
-    dbg:tracer(process, {fun(A, _) -> ?debugFmt("~nCall: ~p~n", [A]) end, x}),
-    dbg:p(all, c),
-    dbg:tp(hackney, request, x),
-    dbg:tp(gen_tcp, send, x),
-    dbg:tpl(jhn_s3c, aws_auth, x),
-    dbg:tp(crypto, mac, x),
-
-    ?assertMatch(ok, jhn_s3c:delete_object(?BUCKET, Key, [{version_id, V1}])),
-    ?assertMatch(ok, jhn_s3c:delete_object(?BUCKET, Key, [{version_id, V2}])).
-%%    ?assertMatch(ok, jhn_s3c:delete_objects(?BUCKET, VKs)).
+    ?assertMatch(ok, jhn_s3c:delete_objects(?BUCKET, VKs)).
 
 read(object) ->
     Key = jhn_uuid:gen(v7, [binary]),

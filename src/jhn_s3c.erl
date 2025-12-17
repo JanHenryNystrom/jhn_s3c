@@ -276,6 +276,10 @@ delete_object(Bucket, Key) -> delete_object(Bucket, Key, []).
 %%--------------------------------------------------------------------
 -spec delete_object(bucket(), key(), opts()) -> ok | error().
 %%--------------------------------------------------------------------
+%%
+%% N.B. specifying version_id does not currently work, use delete_objects/2
+%%      instead.
+%%
 delete_object(Bucket, Key, Opts) ->
     Sub = case parse_opts(?FUNCTION_NAME, Opts) of
               [] -> ~"";
