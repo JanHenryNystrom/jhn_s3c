@@ -23,36 +23,46 @@
 %% @author Jan Henry Nystrom <JanHenryNystrom@gmail.com>
 %% @copyright (C) 2025, Jan Henry Nystrom <JanHenryNystrom@gmail.com>
 %%%-------------------------------------------------------------------
--module(jhn_s3c_app).
+-module(jhn_s3c_config).
 -copyright('Jan Henry Nystrom <JanHenryNystrom@gmail.com>').
 
--behaviour(application).
-
-%% Application callbacks
--export([start/2, stop/1]).
+%% API
+-export([load/0, get/0]).
 
 %% Includes
 -include_lib("jhn_s3c/src/jhn_s3c.hrl").
 
 %% ===================================================================
-%% Application callbacks
+%% API functions
 %% ===================================================================
 
 %%--------------------------------------------------------------------
--spec start(normal, no_arg) -> {ok, pid()}.
+-spec load() -> ok.
 %%--------------------------------------------------------------------
-start(normal, no_arg) ->
-    jhn_s3c_config:load(),
-    #config{hackney_opts = Opts} = jhn_s3c_config:get(),
-    {_, Pool} = proplists:lookup(pool, Opts),
-    hackney_pool:start_pool(Pool, [{timeout, 120_000}]),
-    {ok, self()}.
+load() ->
+    Opts = [{pool, get_env(hackney_pool)}, {recv_timeout, 10_000}],
+    Opts1 = lists:ukeymerge(1,
+                            lists:sort(get_env(hackney_opts)),
+                            lists:sort(Opts)),
+    Config = #config{request_type = get_env(request_type),
+                     protocol = atom_to_binary(get_env(protocol)),
+                     host = get_env(host),
+                     port = integer_to_binary(get_env(port)),
+                     access_key_id = get_env(access_key_id),
+                     access_key = get_env(access_key),
+                     hackney_opts = [with_body | Opts1],
+                     max_tries = get_env(max_tries)},
+    persistent_term:put(?MODULE, Config),
+    ok.
 
 %%--------------------------------------------------------------------
--spec stop(_) -> ok.
+-spec get() -> #config{}.
 %%--------------------------------------------------------------------
-stop(_) -> ok.
+get() -> persistent_term:get(?MODULE).
 
 %% ===================================================================
 %% Internal functions.
 %% ===================================================================
+
+get_env(Key) -> application:get_env(jhn_s3c, Key, undefined).
+

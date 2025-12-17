@@ -41,12 +41,34 @@ bucket_test_() ->
         {setup, setup(bucket), teardown(bucket),
          [{"Create", ?_test(create(bucket))},
           {"List", ?_test(list(buckets))},
+          {"Get Versioning", ?_test(versioning(get))},
+          {"Put Versioning", ?_test(versioning(put))},
           {"Delete", ?_test(delete(bucket))}
          ]}}.
 
 object_test_() ->
     {inorder,
         {setup, setup(object), teardown(object),
+         [{"Create", ?_test(create(object))},
+          {"Read", ?_test(read(object))},
+          {"Update", ?_test(update(object))},
+          {"List", ?_test(list(objects))},
+          {"Delete", ?_test(delete(object))}
+         ]}}.
+
+bucket_path_test_() ->
+    {inorder,
+        {setup, setup(bucket_path), teardown(bucket),
+         [{"Create", ?_test(create(bucket))},
+          {"List", ?_test(list(buckets))},
+          {"Get Versioning", ?_test(versioning(get))},
+          {"Put Versioning", ?_test(versioning(put))},
+          {"Delete", ?_test(delete(bucket))}
+         ]}}.
+
+object_path_test_() ->
+    {inorder,
+        {setup, setup(object_path), teardown(object),
          [{"Create", ?_test(create(object))},
           {"Read", ?_test(read(object))},
           {"Update", ?_test(update(object))},
@@ -62,22 +84,10 @@ object_listing_test_() ->
           {"count objects", ?_test(list(count))}
          ]}}.
 
-bucket_path_test_() ->
+versioning_listing_test_() ->
     {inorder,
-        {setup, setup(bucket_path), teardown(bucket),
-         [{"Create", ?_test(create(bucket))},
-          {"List", ?_test(list(buckets))},
-          {"Delete", ?_test(delete(bucket))}
-         ]}}.
-
-object_path_test_() ->
-    {inorder,
-        {setup, setup(object_path), teardown(object),
-         [{"Create", ?_test(create(object))},
-          {"Read", ?_test(read(object))},
-          {"Update", ?_test(update(object))},
-          {"List", ?_test(list(objects))},
-          {"Delete", ?_test(delete(object))}
+        {setup, setup(versioning), teardown(versioning),
+         [{"Versioning list", ?_test(versioning(list))}
          ]}}.
 
 %%------------------------------------------------------------------------------
@@ -113,6 +123,16 @@ setup(object_path) ->
             {ok, Started} = application:ensure_all_started(jhn_s3c),
             ok = jhn_s3c:create_bucket(?BUCKET),
             Started
+    end;
+setup(versioning) ->
+    logger:remove_handler(default),
+    fun() ->
+            application:load(jhn_s3c),
+            application:set_env(jhn_s3c, request_type, virtual_host),
+            {ok, Started} = application:ensure_all_started(jhn_s3c),
+            ok = jhn_s3c:create_bucket(?BUCKET),
+            ok = jhn_s3c:put_bucket_versioning(?BUCKET, enabled),
+            Started
     end.
 
 teardown(bucket) ->
@@ -122,7 +142,11 @@ teardown(object) ->
             ok = jhn_s3c:delete_objects(?BUCKET, jhn_s3c:list_objects(?BUCKET)),
             ok = jhn_s3c:delete_bucket(?BUCKET),
             [application:stop(App) || App <- Started]
-    end.
+    end;
+teardown(versioning) ->
+    %% ok = jhn_s3c:put_bucket_versioning(?BUCKET, suspended),
+    %% ok = jhn_s3c:delete_bucket(?BUCKET),
+    fun(Started) -> [application:stop(App) || App <- Started] end.
 
 %%------------------------------------------------------------------------------
 %% Tests
@@ -157,6 +181,27 @@ list(count) ->
     ?assertMatch(199, jhn_s3c:count_objects(?BUCKET)),
     ok = jhn_s3c:delete_objects(?BUCKET, jhn_s3c:list_objects(?BUCKET)).
 
+versioning(get) ->
+    ?assertMatch(#{status := suspended},
+                 jhn_s3c:get_bucket_versioning(?BUCKET));
+versioning(put) ->
+    ?assertMatch(ok, jhn_s3c:put_bucket_versioning(?BUCKET, enabled)),
+    ?assertMatch(#{status := enabled},
+                 jhn_s3c:get_bucket_versioning(?BUCKET)),
+    ?assertMatch(ok, jhn_s3c:put_bucket_versioning(?BUCKET, suspended)),
+    ?assertMatch(#{status := suspended},
+                 jhn_s3c:get_bucket_versioning(?BUCKET));
+versioning(list) ->
+    put_n(1, ~"1"),
+    put_n(1, ~"2"),
+    ?assertMatch([#{key := Key, is_latest := true, version_id := _},
+                  #{key := Key, is_latest := false, version_id := _}],
+                 jhn_s3c:list_object_versions(?BUCKET)),
+    VKs = [#{version_id := V1}, #{version_id := V2}] =
+        jhn_s3c:list_object_versions(?BUCKET),
+    ?assertMatch(true, V1 /= V2),
+    ?assertMatch(ok, jhn_s3c:delete_objects(?BUCKET, VKs)).
+
 read(object) ->
     Key = jhn_uuid:gen(v7, [binary]),
     Object = jhn_json:encode(#{hallo => goodbye}, [binary]),
@@ -190,5 +235,9 @@ delete(object) ->
 put_n(N) ->
     [jhn_s3c:put_object(?BUCKET, key(I), object(I)) || I <- lists:seq(1, N)].
 
+put_n(N, V) ->
+    [jhn_s3c:put_object(?BUCKET, key(I), object(I, V)) || I <- lists:seq(1, N)].
+
 key(N) -> <<"Key_", (integer_to_binary(N))/binary>>.
 object(N) -> <<"Object_", (integer_to_binary(N))/binary>>.
+object(N, V) -> <<"Object_", (integer_to_binary(N))/binary, "_", V/binary>>.
