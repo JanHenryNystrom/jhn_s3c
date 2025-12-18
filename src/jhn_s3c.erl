@@ -136,11 +136,12 @@ get_bucket_versioning(Bucket) ->
                       <<"<?xml version=", _/binary>> -> Body;
                       _ -> <<"<?xml version=\"1.0\"?>", Body/binary>>
                   end,
-            case select([[~"Status", ~"MfaDelete"]], XML) of
-                [] -> #{status => suspended};
-                Children ->
-                    #{low_atom(Tag) => low_atom(Val) ||
-                        #xml{tag = Tag, children = [Val]} <- Children}
+            case select([[~"Status", ~"MfaDelete"], child], XML) of
+                #{~"Status" := S, ~"MfaDelete" := M} ->
+                    #{status => low_atom(S), mfa_delete => low_atom(M)};
+                #{~"Status" := S} -> #{status => low_atom(S)};
+                #{~"MfaDelete" := M} -> #{mfa_delete => low_atom(M)};
+                _ -> #{status => suspended}
             end;
         Error -> Error
     end.
@@ -241,7 +242,9 @@ list_object_versions(Bucket, Opts) ->
                 [#{key => Key,
                    is_latest => binary_to_existing_atom(IsLatest),
                    version_id => VersionId} ||
-                    [Key, IsLatest, VersionId] <-
+                    #{~"Key" := Key,
+                      ~"IsLatest" := IsLatest,
+                      ~"VersionId" := VersionId} <-
                         select([{~"Version"},
                                 [~"Key", ~"IsLatest", ~"VersionId"],
                                 child],
@@ -363,7 +366,7 @@ do_exec(State, Max, Tries, Count, Closed) ->
            hackney_opts = Opts} = State,
     case result(hackney:request(M, URI, Headers, Object, Opts), Max, Tries) of
         retry ->
-            timer:sleep((49 + rand:uniform(51)) * Tries, Count, Closed),
+            timer:sleep((49 + rand:uniform(51)) * Tries),
             do_exec(State, Max, Tries + 1, Count, Closed);
         closed when Closed > Count ->
             {error, closed};
