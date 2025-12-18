@@ -62,7 +62,7 @@
 -type opt()           :: {max_keys, integer()} | {token, binary()} |
                          {key_marker, binary()} |
                          {version_id_marker, binary()} |
-                         {version_id, binary()}.
+                         {version_id, binary()} | {raw, boolean()}.
 -type hackney_error() :: _.
 -type http_error()    :: {http_status(), headers(), body()}.
 -type exception()     :: {class(), reason(),  [tuple()]}.
@@ -132,7 +132,10 @@ delete_bucket(Bucket) ->
 get_bucket_versioning(Bucket) ->
     case exec(#req{bucket = Bucket, sub = ~"versioning"}) of
         {ok, _, Body} ->
-            XML = <<"<?xml version=\"1.0\"?>", Body/binary>>,
+            XML = case Body of
+                      <<"<?xml version=", _/binary>> -> Body;
+                      _ -> <<"<?xml version=\"1.0\"?>", Body/binary>>
+                  end,
             case select([[~"Status", ~"MfaDelete"]], XML) of
                 [] -> #{status => suspended};
                 Children ->
@@ -218,15 +221,22 @@ list_object_versions(Bucket) -> list_object_versions(Bucket, []).
 
 %%--------------------------------------------------------------------
 -spec list_object_versions(bucket(), opts()) ->
+          binary() |
           [version_key()] |
           #{key_marker := _,
             version_id_marker := _,
-            keys := [version_key()]} | error().
+            keys := [version_key()]} |
+          error().
 %%--------------------------------------------------------------------
 list_object_versions(Bucket, Opts) ->
-    KVs = parse_opts(?FUNCTION_NAME, Opts),
-    case exec(#req{bucket = Bucket, sub = ~"versions", kvs = KVs}) of
-        {ok, _, Body} ->
+    Opts1 = parse_opts(?FUNCTION_NAME, Opts),
+    {Raw, KVs} = case lists:keytake(raw, 1, Opts1) of
+                     false -> {false, Opts1};
+                     {value, {_, Raw0}, KVs0} -> {Raw0, KVs0}
+                 end,
+    case {Raw, exec(#req{bucket = Bucket, sub = ~"versions", kvs = KVs})} of
+        {true, {ok, _, Body}} -> Body;
+        {false, {ok, _, Body}} ->
             VersionKeys =
                 [#{key => Key,
                    is_latest => binary_to_existing_atom(IsLatest),
@@ -337,6 +347,8 @@ parse_opt(list_object_versions, {key_marker, KeyMarker}) ->
     {~"key-marker", KeyMarker};
 parse_opt(list_object_versions, {version_id, VersionIdMarker}) ->
     {~"version-id-marker", VersionIdMarker};
+parse_opt(list_object_versions, {raw, B}) when is_boolean(B) ->
+    {raw, B};
 parse_opt(delete_object, {version_id, VersionsId}) ->
     {~"versionId", VersionsId}.
 
