@@ -143,7 +143,7 @@ decode(Binary) ->
 %%   
 %% @end
 %%--------------------------------------------------------------------
--spec select(_, #xml{}) -> binary() | [binary()] | {error, _}.
+-spec select(_, #xml{}) -> map() | [map()] | binary() | [binary()] | {error, _}.
 %%--------------------------------------------------------------------
 select(Selection, XML) ->
     try do_select(Selection, XML)
@@ -421,7 +421,8 @@ do_select([child | T], #xml{children = [Child]}) ->
 do_select([{H} | T], #xml{children = Children}) ->
     [do_select(T, Child) || Child <- Children, Child#xml.tag == H];
 do_select([H = [_ | _] | T], #xml{children = Children}) ->
-    [do_select(T, Child) || Child <- Children, lists:member(Child#xml.tag, H)];
+    #{Child#xml.tag => do_select(T, Child) ||
+        Child <- Children, lists:member(Child#xml.tag, H)};
 do_select([H | T], #xml{children = Children}) ->
     case lists:keyfind(H, #xml.tag, Children) of
         false -> [];

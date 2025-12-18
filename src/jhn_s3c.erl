@@ -62,7 +62,7 @@
 -type opt()           :: {max_keys, integer()} | {token, binary()} |
                          {key_marker, binary()} |
                          {version_id_marker, binary()} |
-                         {version_id, binary()} | {raw, boolean()}.
+                         {version_id, binary()}.
 -type hackney_error() :: _.
 -type http_error()    :: {http_status(), headers(), body()}.
 -type exception()     :: {class(), reason(),  [tuple()]}.
@@ -136,11 +136,12 @@ get_bucket_versioning(Bucket) ->
                       <<"<?xml version=", _/binary>> -> Body;
                       _ -> <<"<?xml version=\"1.0\"?>", Body/binary>>
                   end,
-            case select([[~"Status", ~"MfaDelete"]], XML) of
-                [] -> #{status => suspended};
-                Children ->
-                    #{low_atom(Tag) => low_atom(Val) ||
-                        #xml{tag = Tag, children = [Val]} <- Children}
+            case select([[~"Status", ~"MfaDelete"], child], XML) of
+                #{~"Status" := S, ~"MfaDelete" := M} ->
+                    #{status => low_atom(S), mfa_delete => low_atom(M)};
+                #{~"Status" := S} -> #{status => low_atom(S)};
+                #{~"MfaDelete" := M} -> #{mfa_delete => low_atom(M)};
+                _ -> #{status => suspended}
             end;
         Error -> Error
     end.
@@ -229,19 +230,16 @@ list_object_versions(Bucket) -> list_object_versions(Bucket, []).
           error().
 %%--------------------------------------------------------------------
 list_object_versions(Bucket, Opts) ->
-    Opts1 = parse_opts(?FUNCTION_NAME, Opts),
-    {Raw, KVs} = case lists:keytake(raw, 1, Opts1) of
-                     false -> {false, Opts1};
-                     {value, {_, Raw0}, KVs0} -> {Raw0, KVs0}
-                 end,
-    case {Raw, exec(#req{bucket = Bucket, sub = ~"versions", kvs = KVs})} of
-        {true, {ok, _, Body}} -> Body;
-        {false, {ok, _, Body}} ->
+    KVs = parse_opts(?FUNCTION_NAME, Opts),
+    case exec(#req{bucket = Bucket, sub = ~"versions", kvs = KVs}) of
+        {ok, _, Body} ->
             VersionKeys =
                 [#{key => Key,
                    is_latest => binary_to_existing_atom(IsLatest),
                    version_id => VersionId} ||
-                    [Key, IsLatest, VersionId] <-
+                    #{~"Key" := Key,
+                      ~"IsLatest" := IsLatest,
+                      ~"VersionId" := VersionId} <-
                         select([{~"Version"},
                                 [~"Key", ~"IsLatest", ~"VersionId"],
                                 child],
@@ -347,8 +345,6 @@ parse_opt(list_object_versions, {key_marker, KeyMarker}) ->
     {~"key-marker", KeyMarker};
 parse_opt(list_object_versions, {version_id, VersionIdMarker}) ->
     {~"version-id-marker", VersionIdMarker};
-parse_opt(list_object_versions, {raw, B}) when is_boolean(B) ->
-    {raw, B};
 parse_opt(delete_object, {version_id, VersionsId}) ->
     {~"versionId", VersionsId}.
 
@@ -363,7 +359,7 @@ do_exec(State, Max, Tries, Count, Closed) ->
            hackney_opts = Opts} = State,
     case result(hackney:request(M, URI, Headers, Object, Opts), Max, Tries) of
         retry ->
-            timer:sleep((49 + rand:uniform(51)) * Tries, Count, Closed),
+            timer:sleep((49 + rand:uniform(51)) * Tries),
             do_exec(State, Max, Tries + 1, Count, Closed);
         closed when Closed > Count ->
             {error, closed};
