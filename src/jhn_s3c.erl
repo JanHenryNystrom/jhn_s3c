@@ -271,7 +271,7 @@ get_object(Bucket, Key) ->
 head_object(Bucket, Key) ->
     case exec(#req{method = head, bucket = Bucket, key = Key}) of
         {ok, Headers, _} ->
-            [{hackney_bstr:to_lower(H), V} || {H, V} <- Headers];
+            [{jhn_bstring:to_lower(H), V} || {H, V} <- Headers];
         Error ->
             Error
     end.
@@ -378,7 +378,6 @@ state(Req) ->
             access_key_id = Id, access_key = SecretKey} = jhn_s3c_config:get(),
     {_, Pool} = proplists:lookup(pool, Opts),
     Count = hackney_pool:count(Pool),
-    URL = <<Proto/binary, "://", Host/binary, ":", Port/binary>>,
     Method = normalize(M),
     {ContentType, MD5} =
         case O of
@@ -389,7 +388,7 @@ state(Req) ->
                 {~"application/octet_stream", base64:encode(erlang:md5(O))}
         end,
     Date = jhn_timestamp:gen([binary, rfc7231]),
-    SPath = hackney_url:make_url(~"", sign_path(B, K), Sub),
+    SPath = make_url(~"", ~"", ~"", sign_path(B, K), Sub),
     Auth = aws_auth(Method, MD5, ContentType, Date, SPath, Id, SecretKey),
     Headers = [{~"Date", Date},
                {~"Authorization", Auth},
@@ -407,11 +406,12 @@ state(Req) ->
                ~"" -> KVs;
                _ -> Sub
            end,
-    URI = case {ReqType, B} of
-              {virtual_host, _} -> hackney_url:make_url(URL, [K], KVs1);
-              {path, ~""} -> hackney_url:make_url(URL, [K], KVs1);
-              {path, _} -> hackney_url:make_url(URL, [B, K], KVs1)
+    Path = case {ReqType, B} of
+              {virtual_host, _} -> [K];
+              {path, ~""} -> [K];
+              {path, _} -> [B, K]
           end,
+    URI = make_url(Proto, Host, Port, Path, KVs1),
     State = #state{method = M,
                    uri = URI,
                    headers = Headers2,
@@ -427,6 +427,21 @@ normalize(delete) -> ~"DELETE".
 
 sign_path(~"", ~"") -> [~""];
 sign_path(Bucket, Key) -> [Bucket, Key].
+
+make_url(Protocol, Host, Port, Path, Query) ->
+    Set = fun({_, ~""}, M) -> M;
+             ({K, V}, M) -> M#{K => V}
+          end,
+    URI = lists:foldl(Set,
+                      #{path => [$/, lists:join($/, Path)]},
+                      [{host, Host}, {scheme, Protocol}, {port, Port}]),
+    URI1 = case Query of
+               ~"" -> URI;
+               [] -> URI;
+               _ when is_binary(Query) -> URI#{query => Query};
+               _ -> URI#{query => uri_string:compose_query(Query)}
+           end,
+    uri_string:normalize(URI1).
 
 aws_auth(Method, MD5, ContentType, Date, Path, Id, SecretKey) ->
     StringToSign = [Method, $\n, MD5, $\n, ContentType, $\n, Date, $\n, Path],

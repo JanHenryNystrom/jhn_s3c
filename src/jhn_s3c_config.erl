@@ -47,7 +47,7 @@ load() ->
     Config = #config{request_type = get_env(request_type),
                      protocol = atom_to_binary(get_env(protocol)),
                      host = get_env(host),
-                     port = integer_to_binary(get_env(port)),
+                     port = get_env(port),
                      access_key_id = get_env(access_key_id),
                      access_key = get_env(access_key),
                      hackney_opts = [with_body | Opts1],
