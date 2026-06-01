@@ -11,6 +11,8 @@ services:
       MINIO_ROOT_USER: ${ACCOUNT_S3_USERNAME}
       MINIO_ROOT_PASSWORD: ${ACCOUNT_S3_PASSWORD}
       MINIO_DOMAIN: ${HOST_S3}
+      MINIO_ADDRESS: ${HOST_S3}:${PPORT_S3}
+      MINIO_CONSOLE_ADDRESS: ${HOST_S3}:${PORT_S3_2}
     command: server /data
     healthcheck:
       test:
@@ -19,5 +21,29 @@ services:
           "--silent",
           "--fail",
           "http://${HOST_S3}:${PPORT_S3}/minio/health/live"
+        ]
+      start_period: 60s
+  s3bis:
+    image: minio/minio:latest
+    hostname: ${HOST_S3BIS}
+    ports:
+      - ${PPORT_S3BIS}:${PORT_S3BIS}
+    env_file:
+      - .env
+    tty: true
+    environment:
+      MINIO_ROOT_USER: ${ACCOUNT_S3BIS_USERNAME}
+      MINIO_ROOT_PASSWORD: ${ACCOUNT_S3_PASSWORD}
+      MINIO_DOMAIN: ${HOST_S3BIS}
+      MINIO_ADDRESS: ${HOST_S3BIS}:${PPORT_S3BIS}
+      MINIO_CONSOLE_ADDRESS: ${HOST_S3BIS}:${PORT_S3BIS_2}
+    command: server /data
+    healthcheck:
+      test:
+        [ "CMD",
+          "curl",
+          "--silent",
+          "--fail",
+          "http://${HOST_S3BIS}:${PPORT_S3BIS}/minio/health/live"
         ]
       start_period: 60s
