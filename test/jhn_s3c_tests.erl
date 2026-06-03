@@ -31,6 +31,16 @@
 
 %% Defines
 -define(BUCKET, ~"test-bucket").
+-define(BUCKET_A, ~"atest-bucket").
+-define(BUCKET_B, ~"btest-bucket").
+
+-define(SERVER_A,
+        {server_a, [{host, "s3.service"}, {port, 9000},
+                    {access_key_id, ~"admin"}, {access_key, ~"password"}]}).
+
+-define(SERVER_B,
+        {server_b, [{host, ~"s3bis.service"}, {port, 8000},
+                    {access_key_id, ~"hugo"}, {access_key, ~"password"}]}).
 
 %%------------------------------------------------------------------------------
 %% Fixtures
@@ -38,7 +48,7 @@
 
 bucket_test_() ->
     {inorder,
-        {setup, setup(bucket), teardown(bucket),
+        {setup, setup(bucket, legacy), teardown(bucket, legacy),
          [{"Create", ?_test(create(bucket))},
           {"List", ?_test(list(buckets))},
           {"Get Versioning", ?_test(versioning(get))},
@@ -46,9 +56,32 @@ bucket_test_() ->
           {"Delete", ?_test(delete(bucket))}
          ]}}.
 
+bucket_default_test_() ->
+    {inorder,
+        {setup, setup(bucket, default), teardown(bucket, default),
+         [{"Create", ?_test(create(bucket))},
+          {"List", ?_test(list(buckets))},
+          {"Get Versioning", ?_test(versioning(get))},
+          {"Put Versioning", ?_test(versioning(put))},
+          {"Delete", ?_test(delete(bucket))}
+         ]}}.
+
+bucket_two_test_() ->
+    {inorder,
+        {setup, setup(bucket, default), teardown(bucket, default),
+         [{"Create A", ?_test(create(bucket_a))},
+          {"List A", ?_test(list(buckets_a))},
+          {"Create B", ?_test(create(bucket_b))},
+          {"List B", ?_test(list(buckets_b))},
+          {"Get Versioning", ?_test(versioning(get_b))},
+          {"Put Versioning", ?_test(versioning(put_b))},
+          {"Delete B", ?_test(delete(bucket_b))},
+          {"Delete A", ?_test(delete(bucket_a))}
+         ]}}.
+
 object_test_() ->
     {inorder,
-        {setup, setup(object), teardown(object),
+        {setup, setup(object, legacy), teardown(object, legacy),
          [{"Create", ?_test(create(object))},
           {"Read", ?_test(read(object))},
           {"Update", ?_test(update(object))},
@@ -58,7 +91,7 @@ object_test_() ->
 
 bucket_path_test_() ->
     {inorder,
-        {setup, setup(bucket_path), teardown(bucket),
+        {setup, setup(bucket_path, legacy), teardown(bucket, legacy),
          [{"Create", ?_test(create(bucket))},
           {"List", ?_test(list(buckets))},
           {"Get Versioning", ?_test(versioning(get))},
@@ -68,7 +101,7 @@ bucket_path_test_() ->
 
 object_path_test_() ->
     {inorder,
-        {setup, setup(object_path), teardown(object),
+        {setup, setup(object_path, legacy), teardown(object, legacy),
          [{"Create", ?_test(create(object))},
           {"Read", ?_test(read(object))},
           {"Update", ?_test(update(object))},
@@ -78,7 +111,7 @@ object_path_test_() ->
 
 object_listing_test_() ->
     {inorder,
-        {setup, setup(object), teardown(object),
+        {setup, setup(object, legacy), teardown(object, legacy),
          [{"List max_keys", ?_test(list(max_keys))},
           {"List token", ?_test(list(continuation_token))},
           {"count objects", ?_test(list(count))}
@@ -86,7 +119,7 @@ object_listing_test_() ->
 
 versioning_listing_test_() ->
     {inorder,
-        {setup, setup(versioning), teardown(versioning),
+        {setup, setup(versioning, legacy), teardown(versioning, legacy),
          [{"Versioning list", ?_test(versioning(list))}
          ]}}.
 
@@ -94,20 +127,28 @@ versioning_listing_test_() ->
 %% Setup
 %%------------------------------------------------------------------------------
 
-setup(bucket) ->
+setup(bucket, legacy) ->
     logger:remove_handler(default),
     fun() ->
             {ok, Started} = application:ensure_all_started(jhn_s3c),
             Started
     end;
-setup(object) ->
+setup(bucket, default) ->
+    logger:remove_handler(default),
+    fun() ->
+            application:load(jhn_s3c),
+            application:set_env(jhn_s3c, servers, [?SERVER_B, ?SERVER_A]),
+            {ok, Started} = application:ensure_all_started(jhn_s3c),
+            Started
+    end;
+setup(object, _) ->
     logger:remove_handler(default),
     fun() ->
             {ok, Started} = application:ensure_all_started(jhn_s3c),
             ok = jhn_s3c:create_bucket(?BUCKET),
             Started
     end;
-setup(bucket_path) ->
+setup(bucket_path, _) ->
     logger:remove_handler(default),
     fun() ->
             application:load(jhn_s3c),
@@ -115,7 +156,7 @@ setup(bucket_path) ->
             {ok, Started} = application:ensure_all_started(jhn_s3c),
             Started
     end;
-setup(object_path) ->
+setup(object_path, _) ->
     logger:remove_handler(default),
     fun() ->
             application:load(jhn_s3c),
@@ -124,7 +165,7 @@ setup(object_path) ->
             ok = jhn_s3c:create_bucket(?BUCKET),
             Started
     end;
-setup(versioning) ->
+setup(versioning, _) ->
     logger:remove_handler(default),
     fun() ->
             application:load(jhn_s3c),
@@ -135,30 +176,49 @@ setup(versioning) ->
             Started
     end.
 
-teardown(bucket) ->
-    fun(Started) -> [application:stop(App) || App <- Started] end;
-teardown(object) ->
+teardown(bucket, legacy) ->
+    fun(Started) -> [application:stop(App) || App <- Started],
+                    application:unload(s3c)
+    end;
+teardown(bucket, default) ->
+    fun(Started) ->
+            [application:stop(App) || App <- Started],
+            application:unload(s3c)
+    end;
+teardown(object, _) ->
     fun(Started) ->
             ok = jhn_s3c:delete_objects(?BUCKET, jhn_s3c:list_objects(?BUCKET)),
             ok = jhn_s3c:delete_bucket(?BUCKET),
-            [application:stop(App) || App <- Started]
+            [application:stop(App) || App <- Started],
+            application:unload(s3c)
     end;
-teardown(versioning) ->
+teardown(versioning, _) ->
     %% ok = jhn_s3c:put_bucket_versioning(?BUCKET, suspended),
     %% ok = jhn_s3c:delete_bucket(?BUCKET),
-    fun(Started) -> [application:stop(App) || App <- Started] end.
+    fun(Started) ->
+            [application:stop(App) || App <- Started],
+            application:unload(s3c)
+    end.
 
 %%------------------------------------------------------------------------------
 %% Tests
 %%------------------------------------------------------------------------------
 
 create(bucket) -> ?assertMatch(ok, jhn_s3c:create_bucket(?BUCKET));
+create(bucket_a) ->
+    ?assertMatch(ok, jhn_s3c:create_bucket(?BUCKET_A, [{server, server_a}]));
+create(bucket_b) ->
+    ?assertMatch(ok, jhn_s3c:create_bucket(?BUCKET_B, [{server, server_b}]));
 create(object) ->
     Key = jhn_uuid:gen(v7, [binary]),
     Object = jhn_json:encode(#{hallo => goodbye}, [binary]),
     ?assertMatch(ok, jhn_s3c:put_object(?BUCKET, Key, Object)).
 
 list(buckets) -> ?assertMatch([?BUCKET], jhn_s3c:list_buckets());
+list(buckets_a) ->
+    ?assertMatch([?BUCKET_A], jhn_s3c:list_buckets([{server, server_a}]));
+list(buckets_b) ->
+    ?assertMatch([?BUCKET_B], jhn_s3c:list_buckets([{server, server_b}]));
 list(objects) -> ?assertMatch([_, _, _], jhn_s3c:list_objects(?BUCKET));
 list(max_keys) ->
     put_n(10),
@@ -184,6 +244,9 @@ list(count) ->
 versioning(get) ->
     ?assertMatch(#{status := suspended},
                  jhn_s3c:get_bucket_versioning(?BUCKET));
+versioning(get_b) ->
+    ?assertMatch(#{status := suspended},
+                 jhn_s3c:get_bucket_versioning(?BUCKET_B));
 versioning(put) ->
     ?assertMatch(ok, jhn_s3c:put_bucket_versioning(?BUCKET, enabled)),
     ?assertMatch(#{status := enabled},
@@ -191,6 +254,13 @@ versioning(put) ->
     ?assertMatch(ok, jhn_s3c:put_bucket_versioning(?BUCKET, suspended)),
     ?assertMatch(#{status := suspended},
                  jhn_s3c:get_bucket_versioning(?BUCKET));
+versioning(put_b) ->
+    ?assertMatch(ok, jhn_s3c:put_bucket_versioning(?BUCKET_B, enabled)),
+    ?assertMatch(#{status := enabled},
+                 jhn_s3c:get_bucket_versioning(?BUCKET_B)),
+    ?assertMatch(ok, jhn_s3c:put_bucket_versioning(?BUCKET_B, suspended)),
+    ?assertMatch(#{status := suspended},
+                 jhn_s3c:get_bucket_versioning(?BUCKET_B));
 versioning(list) ->
     put_n(1, ~"1"),
     put_n(1, ~"2"),
@@ -220,6 +290,10 @@ update(object) ->
 
 delete(bucket) ->
     ?assertMatch(ok, jhn_s3c:delete_bucket(?BUCKET));
+delete(bucket_a) ->
+    ?assertMatch(ok, jhn_s3c:delete_bucket(?BUCKET_A, [{server, server_a}]));
+delete(bucket_b) ->
+    ?assertMatch(ok, jhn_s3c:delete_bucket(?BUCKET_B, [{server, server_b}]));
 delete(object) ->
     Key = jhn_uuid:gen(v7, [binary]),
     Object = jhn_json:encode(#{hallo => goodbye}, [binary]),

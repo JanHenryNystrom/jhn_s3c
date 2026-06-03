@@ -29,7 +29,10 @@
   {registered, []},
   {applications, [kernel, stdlib, jhn_stdlib, hackney]},
   {mod, {jhn_s3c_app, no_arg}},
-  {env, [%% URL
+  {env, [%% Servers
+         {servers, []},
+         %% Legacy format
+         %% URL
          {protocol, http},
          {host, "localhost"},
          {port, 80},
