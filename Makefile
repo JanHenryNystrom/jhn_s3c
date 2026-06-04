@@ -1,5 +1,5 @@
 #==============================================================================
-# Copyright 2025 Jan Henry Nystrom <JanHenryNystrom@gmail.com>
+# Copyright 2025-2026 Jan Henry Nystrom <JanHenryNystrom@gmail.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 #==============================================================================
 
 BASE := $(strip $(wildcard deps/makefiles/erlang3.mk))
-DOCKER=docker
+DOCKER_COMPOSE=docker-compose
 REBAR=rebar3
 
 ifeq (${BASE},)
@@ -30,9 +30,9 @@ eunit: compile docker-ci
 	(ERL_INETRC=test/inetrc ${REBAR} eunit)
 
 docker-ci: docker-ci-down
-	${DOCKER} compose --file=test/docker-compose.ci.yml up --detach --wait
+	${DOCKER_COMPOSE} --file=test/docker-compose.ci.yml up --detach --wait
 
 docker-ci-down:
-	${DOCKER} compose --file=test/docker-compose.ci.yml down
+	${DOCKER_COMPOSE} --file=test/docker-compose.ci.yml down
 
 ci: compile xref eunit dialyzer

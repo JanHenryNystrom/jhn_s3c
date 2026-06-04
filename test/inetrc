@@ -1,6 +1,6 @@
 %% -*-erlang-*-
 %%==============================================================================
-%% Copyright 2025 Jan Henry Nystrom <JanHenryNystrom@gmail.com>
+%% Copyright 2025-2026 Jan Henry Nystrom <JanHenryNystrom@gmail.com>
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -16,4 +16,4 @@
 %%==============================================================================
 
 {lookup, ["file", "dns"]}.
-{host, {127, 0, 0, 1}, ["s3.service"]}.
+{host, {127, 0, 0, 1}, ["s3.service", "s3bis.service"]}.
