@@ -1,6 +1,6 @@
 %% -*-erlang-*-
 %%==============================================================================
-%% Copyright 2025 Jan Henry Nystrom <JanHenryNystrom@gmail.com>
+%% Copyright 2025-2026 Jan Henry Nystrom <JanHenryNystrom@gmail.com>
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,11 +17,11 @@
 
 %%%-------------------------------------------------------------------
 %%% @doc
-%%%   A S3 library CRUD library eunit test suite
+%%%   A S3 CRUD library eunit test suite
 %%% @end
 %%%
 %% @author Jan Henry Nystrom <JanHenryNystrom@gmail.com>
-%% @copyright (C) 2025, Jan Henry Nystrom <JanHenryNystrom@gmail.com>
+%% @copyright (C) 2025-2026, Jan Henry Nystrom <JanHenryNystrom@gmail.com>
 %%%-------------------------------------------------------------------
 -module(jhn_s3c_tests).
 -copyright('Jan Henry Nystrom <JanHenryNystrom@gmail.com>').
@@ -35,7 +35,7 @@
 -define(BUCKET_B, ~"btest-bucket").
 
 -define(SERVER_A,
-        {server_a, [{host, "s3.service"}, {port, 9000},
+        {server_a, [{host, ~"s3.service"}, {port, 9000},
                     {access_key_id, ~"admin"}, {access_key, ~"password"}]}).
 
 -define(SERVER_B,
@@ -87,6 +87,21 @@ object_test_() ->
           {"Update", ?_test(update(object))},
           {"List", ?_test(list(objects))},
           {"Delete", ?_test(delete(object))}
+         ]}}.
+
+object_two_test_() ->
+    {inorder,
+        {setup, setup(object, two), teardown(object, two),
+         [{"Create", ?_test(create(object_a))},
+          {"Create", ?_test(create(object_b))},
+          {"Read", ?_test(read(object_a))},
+          {"Read", ?_test(read(object_b))},
+          {"Update", ?_test(update(object_a))},
+          {"Update", ?_test(update(object_b))},
+          {"List", ?_test(list(objects_a))},
+          {"List", ?_test(list(objects_b))},
+          {"Delete", ?_test(delete(object_a))},
+          {"Delete", ?_test(delete(object_b))}
          ]}}.
 
 bucket_path_test_() ->
@@ -141,6 +156,16 @@ setup(bucket, default) ->
             {ok, Started} = application:ensure_all_started(jhn_s3c),
             Started
     end;
+setup(object, two) ->
+    logger:remove_handler(default),
+    fun() ->
+            application:load(jhn_s3c),
+            application:set_env(jhn_s3c, servers, [?SERVER_B, ?SERVER_A]),
+            {ok, Started} = application:ensure_all_started(jhn_s3c),
+            ok = jhn_s3c:create_bucket(?BUCKET_A, [{server, server_a}]),
+            ok = jhn_s3c:create_bucket(?BUCKET_B, [{server, server_b}]),
+            Started
+    end;
 setup(object, _) ->
     logger:remove_handler(default),
     fun() ->
@@ -185,6 +210,21 @@ teardown(bucket, default) ->
             [application:stop(App) || App <- Started],
             application:unload(s3c)
     end;
+teardown(object, two) ->
+    fun(Started) ->
+            ok = jhn_s3c:delete_objects(
+                   ?BUCKET_A,
+                   jhn_s3c:list_objects(?BUCKET_A, [{server, server_a}]),
+                   [{server, server_a}]),
+            ok = jhn_s3c:delete_bucket(?BUCKET_A, [{server, server_a}]),
+            ok = jhn_s3c:delete_objects(
+                   ?BUCKET_B,
+                   jhn_s3c:list_objects(?BUCKET_B, [{server, server_b}]),
+                   [{server, server_b}]),
+            ok = jhn_s3c:delete_bucket(?BUCKET_B, [{server, server_b}]),
+            [application:stop(App) || App <- Started],
+            application:unload(s3c)
+    end;
 teardown(object, _) ->
     fun(Started) ->
             ok = jhn_s3c:delete_objects(?BUCKET, jhn_s3c:list_objects(?BUCKET)),
@@ -212,7 +252,23 @@ create(bucket_b) ->
 create(object) ->
     Key = jhn_uuid:gen(v7, [binary]),
     Object = jhn_json:encode(#{hallo => goodbye}, [binary]),
-    ?assertMatch(ok, jhn_s3c:put_object(?BUCKET, Key, Object)).
+    ?assertMatch(ok, jhn_s3c:put_object(?BUCKET, Key, Object));
+create(object_a) ->
+    Key = jhn_uuid:gen(v7, [binary]),
+    Object = jhn_json:encode(#{hallo => goodbye_a}, [binary]),
+    ?assertMatch(ok,
+                 jhn_s3c:put_object(?BUCKET_A,
+                                    Key,
+                                    Object,
+                                    [{server, server_a}]));
+create(object_b) ->
+    Key = jhn_uuid:gen(v7, [binary]),
+    Object = jhn_json:encode(#{hallo => goodbye_b}, [binary]),
+    ?assertMatch(ok,
+                 jhn_s3c:put_object(?BUCKET_B,
+                                    Key,
+                                    Object,
+                                    [{server, server_b}])).
 
 list(buckets) -> ?assertMatch([?BUCKET], jhn_s3c:list_buckets());
 list(buckets_a) ->
@@ -220,6 +276,12 @@ list(buckets_a) ->
 list(buckets_b) ->
     ?assertMatch([?BUCKET_B], jhn_s3c:list_buckets([{server, server_b}]));
 list(objects) -> ?assertMatch([_, _, _], jhn_s3c:list_objects(?BUCKET));
+list(objects_a) ->
+    ?assertMatch([_, _, _],
+                 jhn_s3c:list_objects(?BUCKET_A, [{server, server_a}]));
+list(objects_b) ->
+    ?assertMatch([_, _, _],
+                 jhn_s3c:list_objects(?BUCKET_B, [{server, server_b}]));
 list(max_keys) ->
     put_n(10),
     ?assertMatch(#{token := _, keys := [_, _, _, _, _]},
@@ -278,7 +340,35 @@ read(object) ->
     ?assertMatch(ok, jhn_s3c:put_object(?BUCKET, Key, Object)),
     ?assertMatch(Object, jhn_s3c:get_object(?BUCKET, Key)),
     ?assertMatch(<<_, _/binary>>,
-                 jhn_plist:find(~"etag", jhn_s3c:head_object(?BUCKET, Key))).
+                 jhn_plist:find(~"etag", jhn_s3c:head_object(?BUCKET, Key)));
+read(object_a) ->
+    Key = jhn_uuid:gen(v7, [binary]),
+    Object = jhn_json:encode(#{hallo => goodbye_a}, [binary]),
+    ?assertMatch(ok,
+                 jhn_s3c:put_object(?BUCKET_A,
+                                    Key,
+                                    Object,
+                                    [{server, server_a}])),
+    ?assertMatch(Object, jhn_s3c:get_object(?BUCKET_A,Key,[{server,server_a}])),
+    ?assertMatch(<<_, _/binary>>,
+                 jhn_plist:find(~"etag",
+                                jhn_s3c:head_object(?BUCKET_A,
+                                                    Key,
+                                                    [{server, server_a}])));
+read(object_b) ->
+    Key = jhn_uuid:gen(v7, [binary]),
+    Object = jhn_json:encode(#{hallo => goodbye_b}, [binary]),
+    ?assertMatch(ok,
+                 jhn_s3c:put_object(?BUCKET_B,
+                                    Key,
+                                    Object,
+                                    [{server, server_b}])),
+    ?assertMatch(Object, jhn_s3c:get_object(?BUCKET_B,Key,[{server,server_b}])),
+    ?assertMatch(<<_, _/binary>>,
+                 jhn_plist:find(~"etag",
+                                jhn_s3c:head_object(?BUCKET_B,
+                                                    Key,
+                                                    [{server, server_b}]))).
 
 update(object) ->
     Key = jhn_uuid:gen(v7, [binary]),
@@ -286,7 +376,37 @@ update(object) ->
     Object2 = jhn_json:encode(#{hallo => <<"tìoraidh"/utf8>>}, [binary]),
     ?assertMatch(ok, jhn_s3c:put_object(?BUCKET, Key, Object1)),
     ?assertMatch(ok, jhn_s3c:put_object(?BUCKET, Key, Object2)),
-    ?assertMatch(Object2, jhn_s3c:get_object(?BUCKET, Key)).
+    ?assertMatch(Object2, jhn_s3c:get_object(?BUCKET, Key));
+update(object_a) ->
+    Key = jhn_uuid:gen(v7, [binary]),
+    Object1 = jhn_json:encode(#{hallo => goodbye_a}),
+    Object2 = jhn_json:encode(#{hallo => <<"tìoraidh_a"/utf8>>}, [binary]),
+    ?assertMatch(ok, jhn_s3c:put_object(?BUCKET_A,
+                                        Key,
+                                        Object1,
+                                        [{server, server_a}])),
+    ?assertMatch(ok, jhn_s3c:put_object(?BUCKET_A,
+                                        Key,
+                                        Object2,
+                                        [{server, server_a}])),
+    ?assertMatch(Object2, jhn_s3c:get_object(?BUCKET_A,
+                                             Key,
+                                             [{server, server_a}]));
+update(object_b) ->
+    Key = jhn_uuid:gen(v7, [binary]),
+    Object1 = jhn_json:encode(#{hallo => goodbye_b}),
+    Object2 = jhn_json:encode(#{hallo => <<"tìoraidh_b"/utf8>>}, [binary]),
+    ?assertMatch(ok, jhn_s3c:put_object(?BUCKET_B,
+                                        Key,
+                                        Object1,
+                                        [{server, server_b}])),
+    ?assertMatch(ok, jhn_s3c:put_object(?BUCKET_B,
+                                        Key,
+                                        Object2,
+                                        [{server, server_b}])),
+    ?assertMatch(Object2, jhn_s3c:get_object(?BUCKET_B,
+                                             Key,
+                                             [{server, server_b}])).
 
 delete(bucket) ->
     ?assertMatch(ok, jhn_s3c:delete_bucket(?BUCKET));
@@ -300,7 +420,35 @@ delete(object) ->
     ?assertMatch(ok, jhn_s3c:put_object(?BUCKET, Key, Object)),
     ?assertMatch(Object, jhn_s3c:get_object(?BUCKET, Key)),
     ?assertMatch(ok, jhn_s3c:delete_object(?BUCKET, Key)),
-    ?assertMatch({error, {404, _, _}}, jhn_s3c:get_object(?BUCKET, Key)).
+    ?assertMatch({error, {404, _, _}}, jhn_s3c:get_object(?BUCKET, Key));
+delete(object_a) ->
+    Key = jhn_uuid:gen(v7, [binary]),
+    Object = jhn_json:encode(#{hallo => goodbye_a}, [binary]),
+    ?assertMatch(ok,
+                 jhn_s3c:put_object(?BUCKET_A,
+                                    Key,
+                                    Object,
+                                    [{server, server_a}])),
+    ?assertMatch(Object,
+                 jhn_s3c:get_object(?BUCKET_A, Key, [{server, server_a}])),
+    ?assertMatch(ok,
+                 jhn_s3c:delete_object(?BUCKET_A, Key, [{server, server_a}])),
+    ?assertMatch({error, {404, _, _}},
+                 jhn_s3c:get_object(?BUCKET_A, Key, [{server, server_a}]));
+delete(object_b) ->
+    Key = jhn_uuid:gen(v7, [binary]),
+    Object = jhn_json:encode(#{hallo => goodbye_b}, [binary]),
+    ?assertMatch(ok,
+                 jhn_s3c:put_object(?BUCKET_B,
+                                    Key,
+                                    Object,
+                                    [{server, server_b}])),
+    ?assertMatch(Object,
+                 jhn_s3c:get_object(?BUCKET_B, Key, [{server, server_b}])),
+    ?assertMatch(ok,
+                 jhn_s3c:delete_object(?BUCKET_B, Key, [{server, server_b}])),
+    ?assertMatch({error, {404, _, _}},
+                 jhn_s3c:get_object(?BUCKET_B, Key, [{server, server_b}])).
 
 %%------------------------------------------------------------------------------
 %% Internal functions

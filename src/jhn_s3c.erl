@@ -1,5 +1,5 @@
 %%==============================================================================
-%% Copyright 2025 Jan Henry Nystrom <JanHenryNystrom@gmail.com>
+%% Copyright 2025-2026 Jan Henry Nystrom <JanHenryNystrom@gmail.com>
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@
 %%% @end
 %%%
 %% @author Jan Henry Nystrom <JanHenryNystrom@gmail.com>
-%% @copyright (C) 2025, Jan Henry Nystrom <JanHenryNystrom@gmail.com>
+%% @copyright (C) 2025-2026, Jan Henry Nystrom <JanHenryNystrom@gmail.com>
 %%%-------------------------------------------------------------------
 -module(jhn_s3c).
 -copyright('Jan Henry Nystrom <JanHenryNystrom@gmail.com>').
@@ -403,11 +403,7 @@ delete_objects(Bucket, Keys, Opts) ->
 %% Internal functions.
 %% ===================================================================
 
-server(Opts) ->
-    case jhn_plist:find(servers, Opts) of
-        undefined -> 'DEFAULT';
-        Server ->  Server
-    end.
+server(Opts) -> jhn_plist:find(server, Opts, 'DEFAULT').
 
 count_objects(#{token := T}, Bucket, Step, Acc) ->
     Opts = [{token, T}, {max_keys, Step}],
@@ -418,8 +414,10 @@ count_objects(List = [_|_], _, _, Acc) ->
 count_objects(Error, _, _, _) ->
     Error.
 
-parse_opts(Function, Opts) -> [parse_opt(Function, Opt) || Opt <- Opts].
+parse_opts(Function, Opts) ->
+    jhn_plist:delete(server, [parse_opt(Function, Opt) || Opt <- Opts]).
 
+parse_opt(_, {server, Server}) -> {server, Server};
 parse_opt(_, {max_keys, N}) when is_integer(N) ->
     {~"max-keys", integer_to_binary(N)};
 parse_opt(list_objects, {token, Token}) ->
@@ -430,6 +428,7 @@ parse_opt(list_object_versions, {version_id, VersionIdMarker}) ->
     {~"version-id-marker", VersionIdMarker};
 parse_opt(delete_object, {version_id, VersionsId}) ->
     {~"versionId", VersionsId}.
+
 
 exec(Req) ->
     {State, Max, Count} = state(Req),
