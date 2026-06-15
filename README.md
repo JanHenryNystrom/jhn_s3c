@@ -1,4 +1,4 @@
-jhn_s3c [(α)][5]
+jhn_s3c [(γ)][5]
 ==========
 
 A partial S3 Erlang client lib
@@ -35,7 +35,7 @@ will be overridden by the server config if that is defined. So for example the
 `request_type` if not defined at the top level or for a the server will have the
 default value of `path`, but if set to say `virtual_host` it will have that
 value for all servers not defining it, and if a server defines it to `path`
-well then that particular server will use the `virtual_host` request type.
+well then that particular server will use the path` request type.
 
 The default for `request_type` is `path` in the new configuration unlike the
 old.
