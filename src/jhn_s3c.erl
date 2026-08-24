@@ -439,7 +439,7 @@ exec(Req) ->
 do_exec(State, Max, Tries, Count, Closed) ->
     #state{method = M, uri = URI, headers = Headers, object = Object,
            hackney_opts = Opts} = State,
-    Opts1 = case proplists:is_defined(with_body, Opts) of
+    Opts1 = case lists:member(with_body, Opts) of
                 true -> Opts;
                 false -> [with_body | Opts]
             end,
