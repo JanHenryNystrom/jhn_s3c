@@ -43,9 +43,9 @@
 %%--------------------------------------------------------------------
 start(normal, no_arg) ->
     jhn_s3c_config:load(),
-    #config{hackney_opts = Opts} = jhn_s3c_config:get(),
-    {_, Pool} = proplists:lookup(pool, Opts),
-    hackney_pool:start_pool(Pool, [{timeout, 120_000}]),
+    Opts = [O || {_, #config{hackney_opts = O}} <- jhn_s3c_config:get()],
+    Pools = [jhn_plist:find(pool, O) || O <- Opts],
+    [hackney_pool:start_pool(Pool, [{timeout, 120_000}]) || Pool <- Pools],
     {ok, self()}.
 
 %%--------------------------------------------------------------------

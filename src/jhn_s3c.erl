@@ -439,8 +439,7 @@ exec(Req) ->
 do_exec(State, Max, Tries, Count, Closed) ->
     #state{method = M, uri = URI, headers = Headers, object = Object,
            hackney_opts = Opts} = State,
-    Opts1 = [with_body | remove_with_body(Opts, [])],
-    case result(hackney:request(M, URI, Headers, Object, Opts1), Max, Tries) of
+    case result(hackney:request(M, URI, Headers, Object, Opts), Max, Tries) of
         retry ->
             timer:sleep((49 + rand:uniform(51)) * Tries),
             do_exec(State, Max, Tries + 1, Count, Closed);
@@ -465,7 +464,7 @@ state(Req) ->
             hackney_opts = Opts, max_tries = Max,
             access_key_id = Id,
             access_key = SecretKey} = jhn_s3c_config:get(Server),
-    {_, Pool} = proplists:lookup(pool, Opts),
+    Pool = jhn_plist:find(pool, Opts),
     Count = hackney_pool:count(Pool),
     Method = normalize(M),
     {ContentType, MD5} =
@@ -556,8 +555,3 @@ result(Error = {error, _}, _, _) -> Error.
 select(Pick, XML) -> jhn_s3c_xml:select(Pick, jhn_s3c_xml:decode(XML)).
 
 low_atom(S) -> binary_to_existing_atom(jhn_bstring:to_lower(S)).
-
-remove_with_body([], Acc) -> lists:reverse(Acc);
-remove_with_body([with_body | T], Acc) ->  remove_with_body(T, Acc);
-remove_with_body([{with_body, _} | T], Acc) -> remove_with_body(T, Acc);
-remove_with_body([H | T], Acc) -> remove_with_body(T, [H | Acc]).
