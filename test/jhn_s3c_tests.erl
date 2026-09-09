@@ -40,6 +40,7 @@
 
 -define(SERVER_B,
         {server_b, [{host, ~"s3bis.service"}, {port, 8000},
+                    {pool, another_pool},
                     {access_key_id, ~"hugo"}, {access_key, ~"password"}]}).
 
 %%------------------------------------------------------------------------------

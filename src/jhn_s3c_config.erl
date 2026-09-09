@@ -62,14 +62,13 @@ load() ->
 
 
 %%--------------------------------------------------------------------
--spec get() -> #config{}.
+-spec get() -> [{atom(), #config{}}].
 %%--------------------------------------------------------------------
 get() ->
     case persistent_term:get(?MODULE) of
         [] -> erlang:error(no_config);
-        [{_, Config} | _] -> Config
+        Configs -> Configs
     end.
-
 
 %%--------------------------------------------------------------------
 -spec get(_) -> #config{}.
@@ -93,8 +92,10 @@ get_env(Key) -> application:get_env(jhn_s3c, Key, undefined).
 
 hackney_conf(Pool, Opts) ->
     lists:ukeymerge(1,
-                    lists:sort(Opts),
-                    lists:sort([{pool, Pool}, {recv_timeout, 10_000}])).
+                    lists:sort(lists:delete(with_body, Opts)),
+                    lists:sort([{with_body, true},
+                                {pool, Pool},
+                                {recv_timeout, 10_000}])).
 
 config({Name, Conf}, Default, Pool, HackneyOpts) ->
     Opts1 = hackney_conf(jhn_plist:find(hackney_pool, Conf, Pool),

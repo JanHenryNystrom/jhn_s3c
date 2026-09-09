@@ -17,10 +17,10 @@
 
 -record(config, {request_type  :: virtual_host | path,
                  protocol      :: binary(),
-                 host          :: binary(),
-                 port          :: binary(),
-                 access_key_id :: binary(),
-                 access_key    :: binary(),
-                 hackney_opts  :: [_],
+                 host          :: binary() | undefined,
+                 port          :: binary() | undefined,
+                 access_key_id :: binary() | undefined,
+                 access_key    :: binary() | undefined,
+                 hackney_opts  :: [_] | undefined,
                  max_tries     :: pos_integer()
                 }).
